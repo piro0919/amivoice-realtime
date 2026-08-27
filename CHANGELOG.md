@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.3
+
+### Changed
+
+- Repository layout now matches the other packages: tests live in `tests/`, biome
+  runs on commit through lefthook, and `engines` is gone (it pinned nothing useful
+  and made the host warn about automatic Node upgrades).
+
 ## 0.1.2
 
 ### Changed

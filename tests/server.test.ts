@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createTokenCache, issueAmiVoiceToken } from "./server";
+import { createTokenCache, issueAmiVoiceToken } from "../src/server";
 
 // A Response body can be read only once, so build a new one per call.
 function okResponse(body: string): Response {

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { AmiVoiceRealtimeClient, type WebSocketLike } from "./client";
+import { AmiVoiceRealtimeClient, type WebSocketLike } from "../src/client";
 
 const OPEN = 1;
 const CLOSED = 3;

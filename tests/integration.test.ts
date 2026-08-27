@@ -1,7 +1,7 @@
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { WebSocketServer, type WebSocket as WsSocket } from "ws";
-import { AmiVoiceRealtimeClient } from "./client";
+import { AmiVoiceRealtimeClient } from "../src/client";
 
 /**
  * Run everything over a real WebSocket. A fake socket cannot surface the failures
