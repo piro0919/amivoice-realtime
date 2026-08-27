@@ -4,17 +4,18 @@ import { WebSocketServer, type WebSocket as WsSocket } from "ws";
 import { AmiVoiceRealtimeClient } from "./client.js";
 
 /**
- * 本物の WebSocket 越しに通す。作り物の socket では、パケットの境目や
- * バイナリの扱いのように「経路が本物でないと出ない」壊れ方が見つからない。
+ * Run everything over a real WebSocket. A fake socket cannot surface the failures
+ * that only appear on a real transport, such as packet framing or binary handling.
  *
- * Node の組み込み `WebSocket` を使うので、既定の実装を選ぶ経路も一緒に通る。
+ * This uses Node's built-in `WebSocket`, so it also exercises the default
+ * implementation lookup.
  */
-describe("実サーバー越しの往復", () => {
+describe("round trip over a real server", () => {
   let server: WebSocketServer;
   let url: string;
   let connections: WsSocket[] = [];
   let clients: AmiVoiceRealtimeClient[] = [];
-  /** サーバーが受け取ったものを、文字列とバイナリに分けて溜める。 */
+  /** Collects what the server received, split into text and binary. */
   let receivedText: string[] = [];
   let receivedBinary: Buffer[] = [];
 
@@ -43,14 +44,15 @@ describe("実サーバー越しの往復", () => {
   });
 
   afterEach(async () => {
-    // 失敗して抜けたときも必ず閉じる。開いたままにすると server.close() が
-    // 返らず、本当の失敗の代わりに時間切れが報告される。
+    // Always close, including on a failing exit. Leaving a socket open keeps
+    // server.close() from returning, and a timeout gets reported instead of the
+    // real failure.
     for (const client of clients) client.close();
     for (const socket of connections) socket.terminate();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
-  /** 後で必ず閉じるために覚えておく。 */
+  /** Remember it so afterEach can always close it. */
   function track(client: AmiVoiceRealtimeClient): AmiVoiceRealtimeClient {
     clients.push(client);
     return client;
@@ -67,7 +69,7 @@ describe("実サーバー越しの往復", () => {
     }
   }
 
-  it("開始・送出・終了を一通り通す", async () => {
+  it("runs start, send and finish end to end", async () => {
     const partials: string[] = [];
     const finals: string[] = [];
     const client = track(new AmiVoiceRealtimeClient({
@@ -84,8 +86,8 @@ describe("実サーバー越しの往復", () => {
       "s MSB16K -a-general resultUpdatedInterval=1000 authorization=TOKEN profileId=test-profile",
     );
 
-    // 16 kHz の 100 ミリ秒ぶん。1 パケットになる。
-    // 全標本を 0.5 にすると Int16 では 0x3fff になり、バイトの並びが読める。
+    // 100 ms at 16 kHz, which makes exactly one packet.
+    // Filling with 0.5 gives 0x3fff in Int16, so the byte order is readable.
     const samples = new Float32Array(1600).fill(0.5);
     client.write(samples, 16000);
     await waitFor(() => receivedBinary.length === 1, "audio packet");
@@ -93,7 +95,7 @@ describe("実サーバー越しの往復", () => {
     const packet = receivedBinary[0]!;
     expect(packet.length).toBe(1 + 3200);
     expect(packet[0]).toBe(0x70);
-    // 上位バイトが先。逆に並べると 0xff, 0x3f になり、雑音として認識される。
+    // High byte first. Reversed it would be 0xff, 0x3f and register as noise.
     expect(packet[1]).toBe(0x3f);
     expect(packet[2]).toBe(0xff);
 
@@ -109,8 +111,8 @@ describe("実サーバー越しの往復", () => {
     expect(client.connectionState).toBe("closed");
   });
 
-  it("認証に失敗したらエラーを渡し、開いたことにしない", async () => {
-    // 実際の失敗の形。s に本体が付いて返る。
+  it("reports an auth failure and never reports open", async () => {
+    // The real failure shape: s comes back carrying a body.
     server.removeAllListeners("connection");
     server.on("connection", (socket) => {
       socket.on("message", () => socket.send("s Authentication failed"));

@@ -1,34 +1,36 @@
 /**
- * サーバー側でだけ使う。資格情報（sid / spw）をブラウザに置かないための入口。
+ * Server-side only. This entry point exists so the credentials (sid / spw) never
+ * reach the browser.
  */
 
 const ISSUER_URL = "https://acp-api.amivoice.com/issue_service_authorization";
 const DEFAULT_EXPIRES_IN_MS = 60_000;
 
 export type IssueTokenOptions = {
-  /** AmiVoice のサービス ID。 */
+  /** The AmiVoice service ID. */
   serviceId: string;
-  /** AmiVoice のサービスパスワード。 */
+  /** The AmiVoice service password. */
   servicePassword: string;
-  /** トークンの寿命。既定 60000 ミリ秒。 */
+  /** Token lifetime. Defaults to 60000 ms. */
   expiresInMs?: number;
-  /** 発行元。試験環境を指すときだけ変える。 */
+  /** The issuer. Change it only to point at a test environment. */
   issuerUrl?: string;
-  /** 差し替え可能な fetch。試験で使う。 */
+  /** A replaceable fetch, for tests. */
   fetchImpl?: typeof fetch;
 };
 
 export type IssuedToken = {
-  /** 失効する時刻（ミリ秒の epoch）。 */
+  /** When it expires, as epoch milliseconds. */
   expiresAt: number;
-  /** `s` コマンドの `authorization` に載せる値。 */
+  /** The value to put in the `s` command's `authorization`. */
   value: string;
 };
 
 /**
- * ワンタイムの認証トークンを発行する。
+ * Issue a single-use authentication token.
  *
- * 寿命が短いので、都度発行するか、`createTokenCache` で少しだけ使い回す。
+ * They are short-lived, so either issue one per connection or reuse one briefly
+ * with `createTokenCache`.
  */
 export async function issueAmiVoiceToken({
   expiresInMs = DEFAULT_EXPIRES_IN_MS,
@@ -53,7 +55,7 @@ export async function issueAmiVoiceToken({
       `AmiVoice token issuer returned ${response.status}${detail ? `: ${detail}` : ""}`,
     );
   }
-  // 発行元は本文にトークンだけを返す。JSON ではない。
+  // The issuer returns the token alone in the body. It is not JSON.
   const value = (await response.text()).trim();
   if (!value) {
     throw new Error("AmiVoice token issuer returned an empty body");
@@ -62,14 +64,15 @@ export async function issueAmiVoiceToken({
 }
 
 export type TokenCache = {
-  /** 有効なトークンがあれば使い回し、無ければ発行する。 */
+  /** Reuse a valid token if there is one, otherwise issue a new one. */
   get: (cacheKey?: string) => Promise<IssuedToken>;
 };
 
 /**
- * 発行したトークンを寿命の手前まで使い回す。
+ * Reuse an issued token until shortly before it expires.
  *
- * 同時に来た要求は 1 本にまとめる。素通しすると、1 回の画面表示で何本も発行される。
+ * Concurrent requests collapse into one. Letting them through would issue several
+ * tokens for a single page view.
  */
 export function createTokenCache(
   options: IssueTokenOptions & { refreshAheadMs?: number },

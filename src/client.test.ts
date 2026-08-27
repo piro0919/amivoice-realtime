@@ -4,7 +4,7 @@ import { AmiVoiceRealtimeClient, type WebSocketLike } from "./client.js";
 const OPEN = 1;
 const CLOSED = 3;
 
-/** 試験用の WebSocket。送ったものを覚え、届いたことにできる。 */
+/** A test WebSocket. Records what was sent and can pretend things arrived. */
 class FakeSocket implements WebSocketLike {
   public static instances: FakeSocket[] = [];
   public onclose: ((event: unknown) => void) | null = null;
@@ -27,12 +27,12 @@ class FakeSocket implements WebSocketLike {
     this.onclose?.({});
   }
 
-  /** 接続が開いたことにする。 */
+  /** Pretend the connection opened. */
   public open(): void {
     this.onopen?.({});
   }
 
-  /** サーバーからのパケットが届いたことにする。 */
+  /** Pretend a packet arrived from the server. */
   public receive(data: string): void {
     this.onmessage?.({ data });
   }
@@ -62,7 +62,7 @@ function latest(): FakeSocket {
   return socket;
 }
 
-/** 接続して `s` の成功応答まで済ませる。 */
+/** Connect and get as far as a successful `s` response. */
 async function started(
   overrides: Partial<ConstructorParameters<typeof AmiVoiceRealtimeClient>[0]> = {},
 ): Promise<{ client: AmiVoiceRealtimeClient; socket: FakeSocket }> {
@@ -79,19 +79,19 @@ beforeEach(() => {
 });
 
 describe("start", () => {
-  it("既定の宛先へ繋ぐ", async () => {
+  it("connects to the default endpoint", async () => {
     await started();
     expect(latest().url).toBe("wss://acp-api.amivoice.com/v1/");
   });
 
-  it("接続が開いたら s コマンドを送る", async () => {
+  it("sends the s command once the connection opens", async () => {
     const { socket } = await started({ profileId: "acme" });
     expect(socket.texts[0]).toBe(
       "s MSB16K -a-general resultUpdatedInterval=1000 authorization=TOKEN profileId=acme",
     );
   });
 
-  it("トークンは接続のたびに取り直す", async () => {
+  it("fetches a fresh token on every connect", async () => {
     const token = vi.fn().mockResolvedValue("FRESH");
     const client = makeClient({ token });
     await client.start();
@@ -100,7 +100,7 @@ describe("start", () => {
     expect(latest().texts[0]).toContain("authorization=FRESH");
   });
 
-  it("s の成功応答が来るまで open にしない", async () => {
+  it("is not open until the s response succeeds", async () => {
     const onOpen = vi.fn();
     const client = makeClient({ onOpen });
     await client.start();
@@ -114,22 +114,22 @@ describe("start", () => {
   });
 });
 
-describe("認識結果", () => {
-  it("U を途中経過として渡す", async () => {
+describe("results", () => {
+  it("delivers U as an interim result", async () => {
     const onPartial = vi.fn();
     const { socket } = await started({ onPartial });
     socket.receive('U {"text":"おは"}');
     expect(onPartial).toHaveBeenCalledWith("おは");
   });
 
-  it("A を確定結果として渡す", async () => {
+  it("delivers A as a final result", async () => {
     const onFinal = vi.fn();
     const { socket } = await started({ onFinal });
     socket.receive('A {"text":"おはようございます"}');
     expect(onFinal).toHaveBeenCalledWith("おはようございます");
   });
 
-  it("エラーの本体を結果として渡さない", async () => {
+  it("does not deliver an error body as a result", async () => {
     const onFinal = vi.fn();
     const { socket } = await started({ onFinal });
     socket.receive('A {"code":"o","message":"error"}');
@@ -137,8 +137,8 @@ describe("認識結果", () => {
   });
 });
 
-describe("コマンドの失敗応答", () => {
-  it("s に本体が付いていたらエラーにする", async () => {
+describe("command failure responses", () => {
+  it("treats a bodied s response as an error", async () => {
     const onError = vi.fn();
     const onOpen = vi.fn();
     const client = makeClient({ onError, onOpen });
@@ -151,13 +151,13 @@ describe("コマンドの失敗応答", () => {
         message: "AmiVoice s command failed: Authentication failed",
       }),
     );
-    // 認識は始まっていない。ここを open にすると、送った音声が捨てられている
-    // ことに気づけないまま無音の結果を待つことになる。
+    // Recognition never started. Reporting open here would leave the caller
+    // waiting for results while the audio it sends is thrown away.
     expect(onOpen).not.toHaveBeenCalled();
     expect(client.connectionState).toBe("connecting");
   });
 
-  it("p に本体が付いていたらエラーにする", async () => {
+  it("treats a bodied p response as an error", async () => {
     const onError = vi.fn();
     const { socket } = await started({ onError });
     socket.receive("p something went wrong");
@@ -170,31 +170,31 @@ describe("コマンドの失敗応答", () => {
 });
 
 describe("write", () => {
-  it("100 ミリ秒ぶん溜まってから送る", async () => {
+  it("sends only once 100 ms has accumulated", async () => {
     const { client, socket } = await started();
-    // 16 kHz の 100 ミリ秒は 1600 サンプル。手前では 1 つも出さない。
+    // 100 ms at 16 kHz is 1600 samples. Nothing goes out before that.
     client.write(new Float32Array(1599), 16000);
     expect(socket.binaries).toHaveLength(0);
 
     client.write(new Float32Array(1), 16000);
     expect(socket.binaries).toHaveLength(1);
-    // 先頭の 'p' + 1600 サンプル × 2 バイト
+    // leading 'p' plus 1600 samples at 2 bytes each
     expect(socket.binaries[0]?.byteLength).toBe(1 + 3200);
   });
 
-  it("48 kHz の入力を 16 kHz へ落として送る", async () => {
+  it("downsamples 48 kHz input to 16 kHz", async () => {
     const { client, socket } = await started();
     client.write(new Float32Array(4800), 48000);
     expect(socket.binaries).toHaveLength(1);
     expect(socket.binaries[0]?.byteLength).toBe(1 + 3200);
   });
 
-  it("繋がっていない間の音声は捨てる", async () => {
+  it("discards audio handed over while disconnected", async () => {
     const client = makeClient();
     await client.start();
     latest().open();
-    // s の応答がまだ。ここで溜めると、認識が始まった後に過去の音声が
-    // 今の発話として届く。
+    // The s response has not arrived. Buffering here would deliver past audio as
+    // the current utterance once recognition starts.
     client.write(new Float32Array(16000), 16000);
     expect(latest().binaries).toHaveLength(0);
 
@@ -205,7 +205,7 @@ describe("write", () => {
 });
 
 describe("finish", () => {
-  it("e を送り、応答を待ってから切る", async () => {
+  it("sends e and waits for the response before closing", async () => {
     const { client, socket } = await started();
     const pending = client.finish();
     expect(socket.texts.at(-1)).toBe("e");
@@ -216,7 +216,7 @@ describe("finish", () => {
     expect(client.connectionState).toBe("closed");
   });
 
-  it("応答が来なければ待ち時間で切り上げる", async () => {
+  it("gives up after the timeout when no response arrives", async () => {
     vi.useFakeTimers();
     try {
       const { client } = await started({ finishTimeoutMs: 1000 });
@@ -229,7 +229,7 @@ describe("finish", () => {
     }
   });
 
-  it("e の直前に届いた確定結果を渡す", async () => {
+  it("delivers a final result that lands just before e", async () => {
     const onFinal = vi.fn();
     const { client, socket } = await started({ onFinal });
     const pending = client.finish();
@@ -240,8 +240,8 @@ describe("finish", () => {
   });
 });
 
-describe("再接続", () => {
-  it("こちらから切っていなければ繋ぎ直す", async () => {
+describe("reconnect", () => {
+  it("reconnects when the close was not ours", async () => {
     vi.useFakeTimers();
     try {
       const { socket } = await started();
@@ -255,7 +255,7 @@ describe("再接続", () => {
     }
   });
 
-  it("上限まで来たら諦める", async () => {
+  it("gives up at the retry limit", async () => {
     vi.useFakeTimers();
     try {
       const onClose = vi.fn();
@@ -276,7 +276,7 @@ describe("再接続", () => {
     }
   });
 
-  it("close の後は繋ぎ直さない", async () => {
+  it("does not reconnect after close", async () => {
     vi.useFakeTimers();
     try {
       const { client } = await started();
@@ -288,7 +288,7 @@ describe("再接続", () => {
     }
   });
 
-  it("reconnect: false なら繋ぎ直さない", async () => {
+  it("does not reconnect when reconnect is false", async () => {
     vi.useFakeTimers();
     try {
       const { socket } = await started({ reconnect: false });

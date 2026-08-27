@@ -1,28 +1,33 @@
 # amivoice-realtime
 
-[AmiVoice Cloud Platform](https://acp.amivoice.com/) のリアルタイム音声認識（WebSocket インタフェース）に、音声を送って結果を受け取るクライアント。
+A client for realtime speech recognition on the
+[AmiVoice Cloud Platform](https://acp.amivoice.com/) WebSocket interface.
 
-**株式会社アドバンスト・メディアが提供する公式のライブラリではありません。** AmiVoice は同社の商標です。
+**This is not an official library from Advanced Media, Inc.** AmiVoice is their trademark.
 
-- 依存パッケージなし
-- ブラウザと Node のどちらでも動く
-- マイクの取得を含まない。Float32 のサンプルを渡すだけなので、どこから音を取るかは呼び出し側が決める
-- 資格情報をブラウザに置かせない作りで、トークンの発行はサーバー側の入口に分けてある
+- No runtime dependencies
+- Runs in the browser and in Node
+- Does not acquire the microphone. You hand it Float32 samples, so where the audio
+  comes from stays your decision
+- Keeps credentials out of the browser: token issuing lives behind a separate
+  server-only entry point
 
-## 導入
+## Install
 
 ```bash
 npm install amivoice-realtime
 ```
 
-## 使い方
+## Usage
 
-### サーバー側 — トークンを発行する
+### Server side — issue a token
 
-接続には、ワンタイムの認証トークンが要る。発行にはサービス ID とパスワードが必要で、これはブラウザに置けない。サーバー側でトークンだけを返す。
+Connecting requires a single-use authentication token. Issuing one needs the service
+ID and password, which must never reach the browser, so the server returns only the
+token.
 
 ```ts
-// app/api/amivoice/token/route.ts （Next.js の例）
+// app/api/amivoice/token/route.ts (Next.js example)
 import { createTokenCache } from "amivoice-realtime/server";
 
 const tokens = createTokenCache({
@@ -32,21 +37,23 @@ const tokens = createTokenCache({
 });
 
 export async function GET() {
-  // 実際には、ここで呼び出し元の認証を必ず確かめること
+  // In real code, authenticate the caller here first.
   const { value } = await tokens.get();
   return Response.json({ token: value });
 }
 ```
 
-`createTokenCache` は、寿命の手前まで発行済みのトークンを使い回し、同時に来た要求を 1 本にまとめる。使い回したくなければ `issueAmiVoiceToken` を直に呼ぶ。
+`createTokenCache` reuses an issued token until shortly before it expires and
+collapses concurrent requests into one. Call `issueAmiVoiceToken` directly if you
+would rather not reuse.
 
-### ブラウザ側 — 音声を送る
+### Browser side — send audio
 
 ```ts
 import { AmiVoiceRealtimeClient } from "amivoice-realtime";
 
 const client = new AmiVoiceRealtimeClient({
-  // 関数で渡すと、再接続のたびに新しいトークンを取れる
+  // A function is called on every connect, so reconnects get a fresh token
   token: async () => {
     const res = await fetch("/api/amivoice/token");
     return (await res.json()).token;
@@ -58,8 +65,8 @@ const client = new AmiVoiceRealtimeClient({
 
 await client.start();
 
-// マイクから届いた Float32 のサンプルをそのまま渡す。
-// リサンプルもパケットへの詰め替えもこの中で行う。
+// Hand over the Float32 samples arriving from the microphone.
+// Resampling and packing into packets happen inside.
 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 const context = new AudioContext();
 const source = context.createMediaStreamSource(stream);
@@ -70,13 +77,13 @@ processor.onaudioprocess = (event) => {
 source.connect(processor);
 processor.connect(context.destination);
 
-// 終わるとき。最後の発話の確定結果が届くのを待ってから切る
+// When finishing. Waits for the final result of the last utterance before closing.
 await client.finish();
 ```
 
-### Node で使う
+### In Node
 
-`WebSocket` を持たない環境では、実装を渡す。
+Pass an implementation where there is no global `WebSocket`.
 
 ```ts
 import WebSocket from "ws";
@@ -88,9 +95,10 @@ const client = new AmiVoiceRealtimeClient({
 });
 ```
 
-## 単語登録
+## Registered words
 
-固有名詞や現場の言い回しは、`s` コマンドに載せて認識させられる。
+Proper nouns and domain vocabulary can be attached to the `s` command so the engine
+recognizes them.
 
 ```ts
 import { formatProfileWords } from "amivoice-realtime";
@@ -103,36 +111,42 @@ const profileWords = formatProfileWords([
 new AmiVoiceRealtimeClient({ token, profileWords, profileId: "your-profile" });
 ```
 
-## 設定
+## Options
 
-| 名前 | 既定 | 説明 |
+| Option | Default | Meaning |
 | ---- | ---- | ---- |
-| `token` | （必須） | 認証トークン、またはそれを返す関数 |
-| `grammar` | `-a-general` | 認識エンジン |
-| `codec` | `MSB16K` | 音声形式。16 kHz のビッグエンディアン |
-| `sampleRate` | `16000` | 送出するサンプリングレート。`codec` に合わせる |
-| `sendIntervalMs` | `100` | 1 パケットに載せる音声の長さ |
-| `resultUpdatedIntervalMs` | `1000` | 途中経過を返す間隔 |
-| `profileId` / `profileWords` | — | マイ辞書と単語登録 |
-| `reconnect` | 最大 5 回 | 再接続の設定。`false` で切る |
-| `finishTimeoutMs` | `3000` | `finish()` で `e` の応答を待つ時間 |
-| `url` | `wss://acp-api.amivoice.com/v1/` | 接続先 |
-| `webSocket` | グローバル | `WebSocket` の実装 |
-| `startParams` | — | `s` コマンドに足すパラメータ |
+| `token` | (required) | The authentication token, or a function returning one |
+| `grammar` | `-a-general` | Recognition engine |
+| `codec` | `MSB16K` | Audio format: big-endian, 16 kHz |
+| `sampleRate` | `16000` | Sample rate of the audio sent. Match it to `codec` |
+| `sendIntervalMs` | `100` | How much audio each packet carries |
+| `resultUpdatedIntervalMs` | `1000` | How often interim results are sent back |
+| `profileId` / `profileWords` | — | Personal dictionary and registered words |
+| `reconnect` | up to 5 tries | Reconnect settings. `false` disables it |
+| `finishTimeoutMs` | `3000` | How long `finish()` waits for the `e` response |
+| `url` | `wss://acp-api.amivoice.com/v1/` | Endpoint |
+| `webSocket` | global | The `WebSocket` implementation |
+| `startParams` | — | Extra parameters appended to the `s` command |
 
-## 気をつけている点
+## What this gets right
 
-実際に運用していて踏んだところを、そのまま作りに入れてある。
+Each of these came from running the protocol in production.
 
-- **`s` / `p` / `e` の応答に本体が付いていたらエラーにする。** AmiVoice はこれらの応答を、成功なら本体なし、失敗ならエラーメッセージ付きで返す。認証に失敗したことに気づけるのはここだけで、見落とすと、音声を送り続けたまま無音の結果を待つことになる
-- **`s` の成功応答が来るまで音声を送らない。** 送っても捨てられる
-- **繋がっていない間に渡された音声は捨てる。** 溜めて後から送ると、過去の音声が今の発話として届く
-- **`finish()` は `e` の応答を待ってから切る。** すぐ切ると言い終わりが落ちる
-- **音声はビッグエンディアンで送る。** `MSB16K` は Most Significant Byte first。取り違えると雑音として認識される
+- **A bodied `s`, `p` or `e` response is treated as an error.** AmiVoice answers
+  these with no body on success and an error message on failure. This is the only
+  place a failed authentication becomes visible; miss it and you keep sending audio
+  while waiting for results that never come
+- **No audio is sent until `s` succeeds.** Anything sent earlier is discarded
+- **Audio handed over while disconnected is discarded.** Buffering it would deliver
+  past audio as the current utterance
+- **`finish()` waits for the `e` response before closing.** Closing immediately
+  drops the end of what was said
+- **Audio goes out big-endian.** `MSB16K` means Most Significant Byte first. Getting
+  it backwards turns speech into noise
 
-## 低い層だけ使う
+## Using the lower layer
 
-パケットの組み立てと解析は、それぞれ単体で使える。
+Packet building and parsing are usable on their own.
 
 ```ts
 import {
@@ -145,6 +159,6 @@ import {
 } from "amivoice-realtime";
 ```
 
-## ライセンス
+## License
 
 MIT

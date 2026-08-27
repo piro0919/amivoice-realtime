@@ -1,6 +1,6 @@
 {
   "name": "amivoice-realtime",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Unofficial realtime (WebSocket) speech recognition client for the AmiVoice Cloud Platform API",
   "keywords": [
     "amivoice",

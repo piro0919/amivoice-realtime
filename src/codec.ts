@@ -1,8 +1,8 @@
 /**
- * 音声とパケットの変換。副作用を持たないので、この層だけを単体で使うこともできる。
+ * Audio and packet conversion. Free of side effects, so this layer can be used on its own.
  */
 
-/** Float32 PCM（-1〜1）を Int16 PCM に変換する。 */
+/** Convert Float32 PCM in the -1..1 range to Int16 PCM. */
 export function floatToInt16(input: Float32Array): Int16Array {
   const output = new Int16Array(input.length);
   for (let i = 0; i < input.length; i++) {
@@ -12,7 +12,7 @@ export function floatToInt16(input: Float32Array): Int16Array {
   return output;
 }
 
-/** 2 つの Int16Array を連結する。 */
+/** Concatenate two Int16Arrays. */
 export function concatInt16(a: Int16Array, b: Int16Array): Int16Array {
   const c = new Int16Array(a.length + b.length);
   c.set(a, 0);
@@ -21,10 +21,10 @@ export function concatInt16(a: Int16Array, b: Int16Array): Int16Array {
 }
 
 /**
- * Int16 PCM をビッグエンディアンのバイト列に変換する。
+ * Convert Int16 PCM to a big-endian byte sequence.
  *
- * AmiVoice の既定の音声形式 `MSB16K` は Most Significant Byte first、つまり
- * ビッグエンディアンの 16 kHz。ここを取り違えると雑音として認識される。
+ * AmiVoice's default audio format `MSB16K` means Most Significant Byte first —
+ * big-endian at 16 kHz. Getting this backwards turns speech into noise.
  */
 export function int16ToBigEndianBytes(int16: Int16Array): Uint8Array {
   const out = new Uint8Array(int16.length * 2);
@@ -37,7 +37,7 @@ export function int16ToBigEndianBytes(int16: Int16Array): Uint8Array {
   return out;
 }
 
-/** 入力サンプリングレートから出力レートへ線形補間でリサンプルする。 */
+/** Resample from the input rate to the output rate by linear interpolation. */
 export function resample(
   input: Float32Array,
   inputSampleRate: number,
@@ -61,7 +61,7 @@ export function resample(
   return output;
 }
 
-/** `p` コマンドの音声パケットを組み立てる（先頭 1 バイトが 'p'）。 */
+/** Build an audio packet for the `p` command. The first byte is 'p'. */
 export function buildAudioPacket(int16: Int16Array): Uint8Array {
   const bytes = int16ToBigEndianBytes(int16);
   const frame = new Uint8Array(1 + bytes.length);
@@ -70,20 +70,21 @@ export function buildAudioPacket(int16: Int16Array): Uint8Array {
   return frame;
 }
 
-/** 受信パケットを、先頭 1 文字のタグと本体に分ける。 */
+/** Split an incoming packet into its leading tag character and its body. */
 export function splitPacket(data: string): { body: string; tag: string } {
   const tag = data.slice(0, 1);
-  // 区切りの空白は在ることも無いこともある。'e' のように本体を持たない応答は
-  // 1 文字だけで届く。
+  // The separating space may or may not be present. A response with no body, such
+  // as 'e', arrives as a single character.
   const body = data.length >= 2 && data[1] === " " ? data.slice(2) : data.slice(1);
   return { body, tag };
 }
 
 /**
- * `U` / `A` イベントの本体から認識結果のテキストを取り出す。
+ * Extract the recognized text from the body of a `U` or `A` event.
  *
- * 本体は JSON だが、`code` を持つものは認識結果ではなくエラーなので落とす。
- * JSON として読めない本体も届くことがあるため、その場合は制御文字だけ剥がして返す。
+ * The body is JSON, but one carrying a `code` is an error rather than a result, so
+ * it is dropped. Bodies that do not parse as JSON also arrive; those are returned
+ * with their control characters stripped.
  */
 export function parseResultBody(body: string): string | undefined {
   try {
@@ -108,7 +109,7 @@ export function parseResultBody(body: string): string | undefined {
       return undefined;
     }
   } catch {
-    // JSON でない本体は下で扱う
+    // Non-JSON bodies are handled below
   }
   let text = body;
   if (text.startsWith("\x01\x01\x01\x01\x01")) text = text.slice(5);
@@ -116,23 +117,23 @@ export function parseResultBody(body: string): string | undefined {
 }
 
 export type StartCommandParams = {
-  /** 音声形式。既定は 16 kHz ビッグエンディアンの `MSB16K`。 */
+  /** Audio format. Defaults to `MSB16K`, big-endian at 16 kHz. */
   codec?: string;
-  /** 接続の認証トークン。 */
+  /** The authentication token for the connection. */
   token: string;
-  /** 認識エンジン。既定は汎用の `-a-general`。 */
+  /** Recognition engine. Defaults to the general-purpose `-a-general`. */
   grammar?: string;
-  /** マイ辞書の識別子。 */
+  /** Personal dictionary identifier. */
   profileId?: string;
-  /** 単語登録。`formatProfileWords` で組み立てられる。 */
+  /** Registered words. Build this with `formatProfileWords`. */
   profileWords?: string;
-  /** 途中経過を返す間隔。既定 1000 ミリ秒。 */
+  /** How often interim results are sent back. Defaults to 1000 ms. */
   resultUpdatedIntervalMs?: number;
-  /** 上記以外のパラメータ。`key=value` としてそのまま並べる。 */
+  /** Any other parameters, appended verbatim as `key=value`. */
   extra?: Record<string, number | string>;
 };
 
-/** `s` コマンドの文字列を組み立てる。 */
+/** Build the `s` command string. */
 export function buildStartCommand({
   codec = "MSB16K",
   extra,
@@ -147,8 +148,8 @@ export function buildStartCommand({
     `authorization=${token}`,
   ];
   if (profileId) params.push(`profileId=${profileId}`);
-  // 単語は空白を含みうるので必ず引用符で囲む。囲まずに送ると 2 語目以降が
-  // 別のパラメータとして読まれる。
+  // Words can contain spaces, so always quote them. Unquoted, everything after the
+  // first word is read as a separate parameter.
   if (profileWords) params.push(`profileWords="${profileWords}"`);
   for (const [key, value] of Object.entries(extra ?? {})) {
     params.push(`${key}=${value}`);
@@ -156,7 +157,7 @@ export function buildStartCommand({
   return `s ${codec} ${grammar} ${params.join(" ")}`;
 }
 
-/** 単語登録を `s` コマンドに載る 1 行へ組み立てる。 */
+/** Build registered words into the single line the `s` command carries. */
 export function formatProfileWords(
   words: readonly { spoken: string; wordClass?: string; written: string }[],
 ): string {

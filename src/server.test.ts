@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTokenCache, issueAmiVoiceToken } from "./server.js";
 
-// Response の本文は 1 回しか読めない。呼ばれるたびに作り直す。
+// A Response body can be read only once, so build a new one per call.
 function okResponse(body: string): Response {
   return new Response(body, { status: 200 });
 }
@@ -9,7 +9,7 @@ function okResponse(body: string): Response {
 const credentials = { serviceId: "SID", servicePassword: "SPW" };
 
 describe("issueAmiVoiceToken", () => {
-  it("資格情報をフォームで送る", async () => {
+  it("posts the credentials as a form", async () => {
     const fetchImpl = vi.fn().mockImplementation(() => Promise.resolve(okResponse("TOKEN\n")));
     await issueAmiVoiceToken({ ...credentials, fetchImpl });
 
@@ -24,13 +24,13 @@ describe("issueAmiVoiceToken", () => {
     expect(body.get("epi")).toBe("60000");
   });
 
-  it("本文の前後の空白を落とす", async () => {
+  it("trims whitespace around the body", async () => {
     const fetchImpl = vi.fn().mockImplementation(() => Promise.resolve(okResponse("  TOKEN \n")));
     const token = await issueAmiVoiceToken({ ...credentials, fetchImpl });
     expect(token.value).toBe("TOKEN");
   });
 
-  it("失効の時刻を寿命から決める", async () => {
+  it("derives the expiry from the lifetime", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-27T00:00:00Z"));
     try {
@@ -46,7 +46,7 @@ describe("issueAmiVoiceToken", () => {
     }
   });
 
-  it("失敗した応答を投げる", async () => {
+  it("throws on a failed response", async () => {
     const fetchImpl = vi
       .fn()
       .mockImplementation(() =>
@@ -57,9 +57,9 @@ describe("issueAmiVoiceToken", () => {
     ).rejects.toThrow(/401.*bad credentials/);
   });
 
-  it("空の本文を投げる", async () => {
-    // 200 で空を返されることがある。これを通すと、認証されないまま
-    // 接続して原因の分からない失敗になる。
+  it("throws on an empty body", async () => {
+    // An empty 200 does happen. Letting it through means connecting unauthenticated
+    // and failing for no visible reason.
     const fetchImpl = vi.fn().mockImplementation(() => Promise.resolve(okResponse("   ")));
     await expect(
       issueAmiVoiceToken({ ...credentials, fetchImpl }),
@@ -76,7 +76,7 @@ describe("createTokenCache", () => {
     vi.useRealTimers();
   });
 
-  it("寿命の内は使い回す", async () => {
+  it("reuses a token while it is still valid", async () => {
     const fetchImpl = vi.fn().mockImplementation(() => Promise.resolve(okResponse("TOKEN")));
     const cache = createTokenCache({ ...credentials, fetchImpl });
 
@@ -85,7 +85,7 @@ describe("createTokenCache", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
-  it("寿命の手前で取り直す", async () => {
+  it("re-issues shortly before expiry", async () => {
     const fetchImpl = vi.fn().mockImplementation(() => Promise.resolve(okResponse("TOKEN")));
     const cache = createTokenCache({
       ...credentials,
@@ -95,18 +95,18 @@ describe("createTokenCache", () => {
     });
     await cache.get();
 
-    // 失効の 11 秒前。まだ使う。
+    // 11 seconds before expiry: still reused.
     vi.setSystemTime(new Date("2026-08-27T00:00:49Z"));
     await cache.get();
     expect(fetchImpl).toHaveBeenCalledTimes(1);
 
-    // 失効の 9 秒前。取り直す。
+    // 9 seconds before expiry: re-issued.
     vi.setSystemTime(new Date("2026-08-27T00:00:51Z"));
     await cache.get();
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
-  it("同時に来た要求を 1 本にまとめる", async () => {
+  it("collapses concurrent requests into one", async () => {
     let resolveFetch: (value: Response) => void = () => {};
     const fetchImpl = vi.fn().mockReturnValue(
       new Promise<Response>((resolve) => {
@@ -124,7 +124,7 @@ describe("createTokenCache", () => {
     expect(second.value).toBe("TOKEN");
   });
 
-  it("鍵ごとに分けて持つ", async () => {
+  it("keeps a separate token per cache key", async () => {
     const fetchImpl = vi.fn().mockImplementation(() => Promise.resolve(okResponse("TOKEN")));
     const cache = createTokenCache({ ...credentials, fetchImpl });
     await cache.get("user-a");

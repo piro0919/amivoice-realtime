@@ -13,7 +13,7 @@ const DEFAULT_URL = "wss://acp-api.amivoice.com/v1/";
 const DEFAULT_SAMPLE_RATE = 16_000;
 const DEFAULT_SEND_INTERVAL_MS = 100;
 
-/** `WebSocket` のうち、この実装が使う部分だけ。 */
+/** The part of `WebSocket` this implementation uses. */
 export type WebSocketLike = {
   close(): void;
   onclose: ((event: unknown) => void) | null;
@@ -35,43 +35,43 @@ export type ReconnectOptions = {
 
 export type AmiVoiceRealtimeOptions = {
   /**
-   * 認証トークン、またはそれを返す関数。
+   * The authentication token, or a function returning one.
    *
-   * トークンはワンタイムで寿命が短い。関数を渡すと、接続のたびに呼ばれるので、
-   * 再接続でも新しいトークンを取れる。文字列で渡すと 1 回しか使えない。
+   * Tokens are single-use and short-lived. A function is called on every connect,
+   * so reconnects get a fresh token. A plain string works only once.
    *
-   * **資格情報（sid / spw）をブラウザに置かないこと。** トークンの発行は
-   * `amivoice-realtime/server` を使ってサーバー側で行う。
+   * **Never put the credentials (sid / spw) in the browser.** Issue tokens on the
+   * server with `amivoice-realtime/server`.
    */
   token: (() => Promise<string> | string) | string;
-  /** 音声形式。既定は `MSB16K`。変えるなら `sampleRate` も併せて変える。 */
+  /** Audio format. Defaults to `MSB16K`. Change `sampleRate` to match if you change this. */
   codec?: string;
-  /** 認識エンジン。既定は `-a-general`。 */
+  /** Recognition engine. Defaults to `-a-general`. */
   grammar?: string;
-  /** 送出をやめて接続を切るまでの、`e` の応答の待ち時間。既定 3000 ミリ秒。 */
+  /** How long to wait for the `e` response before closing. Defaults to 3000 ms. */
   finishTimeoutMs?: number;
   onClose?: () => void;
   onError?: (error: Error) => void;
-  /** 確定した認識結果。1 発話ごとに呼ばれる。 */
+  /** A final result. Called once per utterance. */
   onFinal?: (text: string) => void;
   onOpen?: () => void;
-  /** 途中経過。同じ発話について何度も呼ばれ、そのたび全文が渡る。 */
+  /** An interim result. Called repeatedly for one utterance, each time with the full text. */
   onPartial?: (text: string) => void;
   profileId?: string;
   profileWords?: string;
-  /** 再接続の設定。`false` で切る。既定は最大 5 回。 */
+  /** Reconnect settings. `false` disables it. Defaults to at most 5 attempts. */
   reconnect?: ReconnectOptions | false;
   resultUpdatedIntervalMs?: number;
-  /** 送出する音声のサンプリングレート。既定 16000。`codec` に合わせる。 */
+  /** Sample rate of the audio sent. Defaults to 16000. Match it to `codec`. */
   sampleRate?: number;
-  /** 1 パケットに載せる音声の長さ。既定 100 ミリ秒。 */
+  /** How much audio each packet carries. Defaults to 100 ms. */
   sendIntervalMs?: number;
-  /** `s` コマンドに足すパラメータ。 */
+  /** Extra parameters appended to the `s` command. */
   startParams?: StartCommandParams["extra"];
   url?: string;
   /**
-   * `WebSocket` の実装。既定はグローバルのもの。
-   * Node では `ws` を渡す: `webSocket: (url) => new WebSocket(url)`
+   * The `WebSocket` implementation. Defaults to the global one.
+   * In Node, pass `ws`: `webSocket: (url) => new WebSocket(url)`
    */
   webSocket?: WebSocketFactory;
 };
@@ -92,10 +92,10 @@ function defaultWebSocketFactory(url: string): WebSocketLike {
 }
 
 /**
- * AmiVoice のリアルタイム音声認識に、音声を送って結果を受け取る。
+ * Sends audio to AmiVoice realtime speech recognition and receives the results.
  *
- * マイクの取得はこの実装の責務ではない。`write()` に Float32 のサンプルを渡す。
- * どこから取るかは呼び出し側が決める。
+ * Acquiring the microphone is not this class's job. Hand `write()` Float32 samples;
+ * where they come from is the caller's decision.
  */
 export class AmiVoiceRealtimeClient {
   private buffer: Int16Array = new Int16Array(0);
@@ -111,12 +111,12 @@ export class AmiVoiceRealtimeClient {
     this.options = options;
   }
 
-  /** 今の接続の状態。 */
+  /** The current connection state. */
   public get connectionState(): ConnectionState {
     return this.state;
   }
 
-  /** 接続して認識を始める。`onOpen` が呼ばれた時点から音声を送れる。 */
+  /** Connect and start recognizing. Audio may be sent once `onOpen` has fired. */
   public async start(): Promise<void> {
     if (this.state === "connecting" || this.state === "open") return;
     this.closedByUser = false;
@@ -126,11 +126,12 @@ export class AmiVoiceRealtimeClient {
   }
 
   /**
-   * 音声を送る。`samples` は 1ch の Float32（-1〜1）。
+   * Send audio. `samples` is single-channel Float32 in the -1..1 range.
    *
-   * 送出レートへのリサンプルと、パケットへの詰め替えはこの中で行う。
-   * 接続していない間に渡した音声は捨てる。溜めて後から送ると、認識の側では
-   * 過去の音声が今の発話として届くことになる。
+   * Resampling to the send rate and packing into packets happen here.
+   *
+   * Audio handed over while disconnected is discarded. Buffering it would deliver
+   * past audio as if it were the current utterance.
    */
   public write(samples: Float32Array, sampleRate: number): void {
     if (this.state !== "open" || !this.ws) return;
@@ -149,9 +150,10 @@ export class AmiVoiceRealtimeClient {
   }
 
   /**
-   * 認識を終える。`e` を送り、応答を待ってから接続を切る。
+   * Finish recognizing. Sends `e`, waits for the response, then closes.
    *
-   * 待つのは、最後の発話の確定結果が `e` の前に届くため。すぐ切ると言い終わりが落ちる。
+   * The wait matters because the final result of the last utterance arrives before
+   * `e`. Closing immediately drops the end of what was said.
    */
   public async finish(): Promise<void> {
     if (this.state === "closed" || this.state === "closing") return;
@@ -182,7 +184,7 @@ export class AmiVoiceRealtimeClient {
     });
   }
 
-  /** すぐ切る。確定していない発話は捨てる。 */
+  /** Close immediately, discarding anything not yet finalized. */
   public close(): void {
     this.closedByUser = true;
     this.teardown();
@@ -245,8 +247,9 @@ export class AmiVoiceRealtimeClient {
   private handleMessage(data: string): void {
     const { body, tag } = splitPacket(data);
 
-    // s / p / e の応答は、本体が空なら成功、本体があればエラーメッセージ。
-    // 認識が始まっていないことに気づけるのはここだけなので、必ず拾う。
+    // For s / p / e the response means success when the body is empty and carries an
+    // error message otherwise. This is the only place recognition failing to start
+    // becomes visible, so never skip it.
     if (tag === "s" || tag === "p") {
       if (body.trim()) {
         this.emitError(new Error(`AmiVoice ${tag} command failed: ${body}`));
@@ -336,14 +339,14 @@ export class AmiVoiceRealtimeClient {
       try {
         ws.close();
       } catch {
-        // 既に切れている
+        // already closed
       }
     }
     this.options.onClose?.();
   }
 }
 
-/** クライアントを作って接続まで済ませる。 */
+/** Create a client and connect it. */
 export async function createAmiVoiceRealtimeClient(
   options: AmiVoiceRealtimeOptions,
 ): Promise<AmiVoiceRealtimeClient> {
