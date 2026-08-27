@@ -10,7 +10,9 @@ const credentials = { serviceId: "SID", servicePassword: "SPW" };
 
 describe("issueAmiVoiceToken", () => {
   it("posts the credentials as a form", async () => {
-    const fetchImpl = vi.fn().mockImplementation(() => Promise.resolve(okResponse("TOKEN\n")));
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(okResponse("TOKEN\n")));
     await issueAmiVoiceToken({ ...credentials, fetchImpl });
 
     const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
@@ -25,7 +27,9 @@ describe("issueAmiVoiceToken", () => {
   });
 
   it("trims whitespace around the body", async () => {
-    const fetchImpl = vi.fn().mockImplementation(() => Promise.resolve(okResponse("  TOKEN \n")));
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(okResponse("  TOKEN \n")));
     const token = await issueAmiVoiceToken({ ...credentials, fetchImpl });
     expect(token.value).toBe("TOKEN");
   });
@@ -34,7 +38,9 @@ describe("issueAmiVoiceToken", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-27T00:00:00Z"));
     try {
-      const fetchImpl = vi.fn().mockImplementation(() => Promise.resolve(okResponse("TOKEN")));
+      const fetchImpl = vi
+        .fn()
+        .mockImplementation(() => Promise.resolve(okResponse("TOKEN")));
       const token = await issueAmiVoiceToken({
         ...credentials,
         expiresInMs: 30_000,
@@ -60,7 +66,9 @@ describe("issueAmiVoiceToken", () => {
   it("throws on an empty body", async () => {
     // An empty 200 does happen. Letting it through means connecting unauthenticated
     // and failing for no visible reason.
-    const fetchImpl = vi.fn().mockImplementation(() => Promise.resolve(okResponse("   ")));
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(okResponse("   ")));
     await expect(
       issueAmiVoiceToken({ ...credentials, fetchImpl }),
     ).rejects.toThrow(/empty body/);
@@ -77,7 +85,9 @@ describe("createTokenCache", () => {
   });
 
   it("reuses a token while it is still valid", async () => {
-    const fetchImpl = vi.fn().mockImplementation(() => Promise.resolve(okResponse("TOKEN")));
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(okResponse("TOKEN")));
     const cache = createTokenCache({ ...credentials, fetchImpl });
 
     await cache.get();
@@ -86,7 +96,9 @@ describe("createTokenCache", () => {
   });
 
   it("re-issues shortly before expiry", async () => {
-    const fetchImpl = vi.fn().mockImplementation(() => Promise.resolve(okResponse("TOKEN")));
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(okResponse("TOKEN")));
     const cache = createTokenCache({
       ...credentials,
       expiresInMs: 60_000,
@@ -125,7 +137,9 @@ describe("createTokenCache", () => {
   });
 
   it("keeps a separate token per cache key", async () => {
-    const fetchImpl = vi.fn().mockImplementation(() => Promise.resolve(okResponse("TOKEN")));
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(okResponse("TOKEN")));
     const cache = createTokenCache({ ...credentials, fetchImpl });
     await cache.get("user-a");
     await cache.get("user-b");

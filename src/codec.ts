@@ -75,7 +75,8 @@ export function splitPacket(data: string): { body: string; tag: string } {
   const tag = data.slice(0, 1);
   // The separating space may or may not be present. A response with no body, such
   // as 'e', arrives as a single character.
-  const body = data.length >= 2 && data[1] === " " ? data.slice(2) : data.slice(1);
+  const body =
+    data.length >= 2 && data[1] === " " ? data.slice(2) : data.slice(1);
   return { body, tag };
 }
 

@@ -28,9 +28,9 @@ describe("floatToInt16", () => {
 describe("int16ToBigEndianBytes", () => {
   it("puts the high byte first", () => {
     // 0x1234 must come out as 0x12 then 0x34. Reversed, speech becomes noise.
-    expect(Array.from(int16ToBigEndianBytes(new Int16Array([0x1234])))).toEqual([
-      0x12, 0x34,
-    ]);
+    expect(Array.from(int16ToBigEndianBytes(new Int16Array([0x1234])))).toEqual(
+      [0x12, 0x34],
+    );
   });
 
   it("keeps negatives in two's complement", () => {

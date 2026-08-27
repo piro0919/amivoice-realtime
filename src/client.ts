@@ -5,8 +5,8 @@ import {
   floatToInt16,
   parseResultBody,
   resample,
-  splitPacket,
   type StartCommandParams,
+  splitPacket,
 } from "./codec.js";
 
 const DEFAULT_URL = "wss://acp-api.amivoice.com/v1/";

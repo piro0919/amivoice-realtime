@@ -72,13 +72,15 @@ describe("round trip over a real server", () => {
   it("runs start, send and finish end to end", async () => {
     const partials: string[] = [];
     const finals: string[] = [];
-    const client = track(new AmiVoiceRealtimeClient({
-      onFinal: (text) => finals.push(text),
-      onPartial: (text) => partials.push(text),
-      profileId: "test-profile",
-      token: async () => "TOKEN",
-      url,
-    }));
+    const client = track(
+      new AmiVoiceRealtimeClient({
+        onFinal: (text) => finals.push(text),
+        onPartial: (text) => partials.push(text),
+        profileId: "test-profile",
+        token: async () => "TOKEN",
+        url,
+      }),
+    );
 
     await client.start();
     await waitFor(() => client.connectionState === "open", "open");
@@ -92,14 +94,16 @@ describe("round trip over a real server", () => {
     client.write(samples, 16000);
     await waitFor(() => receivedBinary.length === 1, "audio packet");
 
-    const packet = receivedBinary[0]!;
+    const packet = receivedBinary[0];
+    if (!packet) throw new Error("no audio packet was received");
     expect(packet.length).toBe(1 + 3200);
     expect(packet[0]).toBe(0x70);
     // High byte first. Reversed it would be 0xff, 0x3f and register as noise.
     expect(packet[1]).toBe(0x3f);
     expect(packet[2]).toBe(0xff);
 
-    const socket = connections[0]!;
+    const socket = connections[0];
+    if (!socket) throw new Error("no connection was accepted");
     socket.send('U {"text":"おはよ"}');
     socket.send('A {"text":"おはようございます"}');
     await waitFor(() => finals.length === 1, "final result");
@@ -119,12 +123,14 @@ describe("round trip over a real server", () => {
     });
 
     const errors: Error[] = [];
-    const client = track(new AmiVoiceRealtimeClient({
-      onError: (error) => errors.push(error),
-      reconnect: false,
-      token: "BAD",
-      url,
-    }));
+    const client = track(
+      new AmiVoiceRealtimeClient({
+        onError: (error) => errors.push(error),
+        reconnect: false,
+        token: "BAD",
+        url,
+      }),
+    );
     await client.start();
     await waitFor(() => errors.length > 0, "error");
 

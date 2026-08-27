@@ -1,7 +1,37 @@
 {
   "name": "amivoice-realtime",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Unofficial realtime (WebSocket) speech recognition client for the AmiVoice Cloud Platform API",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./server": {
+      "import": {
+        "types": "./dist/server.d.ts",
+        "default": "./dist/server.js"
+      },
+      "require": {
+        "types": "./dist/server.d.cts",
+        "default": "./dist/server.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
   "keywords": [
     "amivoice",
     "speech-recognition",
@@ -12,37 +42,30 @@
     "transcription"
   ],
   "license": "MIT",
-  "author": "piro0919",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/piro0919/amivoice-realtime.git"
   },
-  "type": "module",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    },
-    "./server": {
-      "types": "./dist/server.d.ts",
-      "default": "./dist/server.js"
-    }
+  "funding": "https://github.com/sponsors/piro0919",
+  "bugs": {
+    "url": "https://github.com/piro0919/amivoice-realtime/issues"
   },
-  "files": [
-    "dist"
-  ],
-  "sideEffects": false,
+  "author": "piro0919 <piro.haniwa@gmail.com> (https://kkweb.io/)",
   "engines": {
     "node": ">=20"
   },
   "packageManager": "pnpm@11.1.2",
   "scripts": {
-    "build": "tsup",
+    "build:lib": "tsup",
     "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "biome check",
+    "format": "biome format --write",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "pnpm test && pnpm typecheck && pnpm build"
+    "prepublishOnly": "pnpm test && pnpm build:lib"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.10",
     "@types/ws": "^8.18.1",
     "tsup": "^8.5.0",
     "typescript": "^5.9.0",

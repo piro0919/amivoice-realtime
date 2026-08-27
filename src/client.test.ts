@@ -47,7 +47,9 @@ class FakeSocket implements WebSocketLike {
 }
 
 function makeClient(
-  overrides: Partial<ConstructorParameters<typeof AmiVoiceRealtimeClient>[0]> = {},
+  overrides: Partial<
+    ConstructorParameters<typeof AmiVoiceRealtimeClient>[0]
+  > = {},
 ): AmiVoiceRealtimeClient {
   return new AmiVoiceRealtimeClient({
     token: "TOKEN",
@@ -64,7 +66,9 @@ function latest(): FakeSocket {
 
 /** Connect and get as far as a successful `s` response. */
 async function started(
-  overrides: Partial<ConstructorParameters<typeof AmiVoiceRealtimeClient>[0]> = {},
+  overrides: Partial<
+    ConstructorParameters<typeof AmiVoiceRealtimeClient>[0]
+  > = {},
 ): Promise<{ client: AmiVoiceRealtimeClient; socket: FakeSocket }> {
   const client = makeClient(overrides);
   await client.start();

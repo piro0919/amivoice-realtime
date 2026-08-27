@@ -1,8 +1,8 @@
 export {
   AmiVoiceRealtimeClient,
-  createAmiVoiceRealtimeClient,
   type AmiVoiceRealtimeOptions,
   type ConnectionState,
+  createAmiVoiceRealtimeClient,
   type ReconnectOptions,
   type WebSocketFactory,
   type WebSocketLike,
@@ -16,6 +16,6 @@ export {
   int16ToBigEndianBytes,
   parseResultBody,
   resample,
-  splitPacket,
   type StartCommandParams,
+  splitPacket,
 } from "./codec.js";
