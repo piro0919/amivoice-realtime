@@ -1,0 +1,56 @@
+{
+  "name": "amivoice-realtime",
+  "version": "0.1.0",
+  "description": "Unofficial realtime (WebSocket) speech recognition client for the AmiVoice Cloud Platform API",
+  "keywords": [
+    "amivoice",
+    "speech-recognition",
+    "asr",
+    "realtime",
+    "websocket",
+    "japanese",
+    "transcription"
+  ],
+  "license": "MIT",
+  "author": "piro0919",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/piro0919/amivoice-realtime.git"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "pnpm test && pnpm typecheck && pnpm build"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0",
+    "ws": "^8.21.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}
