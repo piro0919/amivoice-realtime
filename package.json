@@ -48,10 +48,5 @@
     "typescript": "^5.9.0",
     "vitest": "^3.2.0",
     "ws": "^8.21.3"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
   }
 }
