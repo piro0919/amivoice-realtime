@@ -6,7 +6,7 @@ export {
   type ReconnectOptions,
   type WebSocketFactory,
   type WebSocketLike,
-} from "./client.js";
+} from "./client";
 export {
   buildAudioPacket,
   buildStartCommand,
@@ -18,4 +18,4 @@ export {
   resample,
   type StartCommandParams,
   splitPacket,
-} from "./codec.js";
+} from "./codec";

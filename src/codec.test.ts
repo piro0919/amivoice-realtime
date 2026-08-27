@@ -9,7 +9,7 @@ import {
   parseResultBody,
   resample,
   splitPacket,
-} from "./codec.js";
+} from "./codec";
 
 describe("floatToInt16", () => {
   it("saturates at the extremes", () => {

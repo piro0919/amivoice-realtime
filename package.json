@@ -56,6 +56,9 @@
   },
   "packageManager": "pnpm@11.1.2",
   "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
     "build:lib": "tsup",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -66,10 +69,20 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.10",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
     "@types/ws": "^8.18.1",
+    "@vercel/analytics": "^2.0.1",
+    "babel-plugin-react-compiler": "^1.0.0",
+    "next": "16.3.2",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "tailwindcss": "^4.3.3",
     "tsup": "^8.5.0",
     "typescript": "^5.9.0",
     "vitest": "^3.2.0",
     "ws": "^8.21.3"
-  }
+  },
+  "homepage": "https://amivoice-realtime.kkweb.io/"
 }

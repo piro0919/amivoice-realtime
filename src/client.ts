@@ -7,7 +7,7 @@ import {
   resample,
   type StartCommandParams,
   splitPacket,
-} from "./codec.js";
+} from "./codec";
 
 const DEFAULT_URL = "wss://acp-api.amivoice.com/v1/";
 const DEFAULT_SAMPLE_RATE = 16_000;
