@@ -79,7 +79,7 @@
     "tailwindcss": "^4.3.3",
     "tsup": "^8.5.0",
     "typescript": "^5.9.0",
-    "vitest": "^3.2.0",
+    "vitest": "^4.1.11",
     "ws": "^8.21.3"
   },
   "homepage": "https://amivoice-realtime.kkweb.io/"
