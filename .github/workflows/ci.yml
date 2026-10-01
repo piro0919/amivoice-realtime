@@ -45,7 +45,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
 
-  # `engines` allows Node 18 and 20, where `/server` runs and the client can
+  # The package supports Node 18 and 20, where `/server` runs and the client can
   # run with `ws`. Build on 22 and check both entry points load there, through
   # require and import.
   old-node-load:

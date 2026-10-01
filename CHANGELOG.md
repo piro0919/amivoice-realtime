@@ -29,7 +29,7 @@
 
 - `pcmByteOrder(codec)`, `int16ToLittleEndianBytes`, `isResultBody`, and a
   `byteOrder` argument on `buildAudioPacket` (default `"big"`).
-- `engines.node` is back, as `>=18`. `typesVersions` lets `moduleResolution: node`
+- `typesVersions` lets `moduleResolution: node`
   find the types of `amivoice-realtime/server`. CI checks the packed package with
   `publint --strict` and `attw` (`pnpm check:package`), runs the tests on Node 22
   and 24, and checks both entry points load on Node 18 and 20.
