@@ -27,10 +27,11 @@ export type IssuedToken = {
 };
 
 /**
- * Issue a single-use authentication token.
+ * Issue a short-lived authentication token (AmiVoice's one-time APPKEY).
  *
- * They are short-lived, so either issue one per connection or reuse one briefly
- * with `createTokenCache`.
+ * Despite the name, a token is not single-use: it can authenticate any number of
+ * connections until it expires, and none after. Issue one per connection, or
+ * reuse one until shortly before it expires with `createTokenCache`.
  */
 export async function issueAmiVoiceToken({
   expiresInMs = DEFAULT_EXPIRES_IN_MS,
@@ -69,7 +70,8 @@ export type TokenCache = {
 };
 
 /**
- * Reuse an issued token until shortly before it expires.
+ * Reuse an issued token until shortly before it expires. This relies on a token
+ * being valid for many connections within its lifetime.
  *
  * Concurrent requests collapse into one. Letting them through would issue several
  * tokens for a single page view.

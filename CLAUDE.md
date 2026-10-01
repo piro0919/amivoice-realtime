@@ -41,12 +41,25 @@ Confirmed against the official documentation, not guessed.
 - **`s` / `p` / `e` responses carry no body on success and an error message on
   failure.** This is the only place a failed authentication becomes visible; miss it
   and the caller keeps sending audio while waiting for results that never come.
-- **`MSB16K` is big-endian at 16 kHz.** Most Significant Byte first. Reversed, speech
-  registers as noise.
+- **`MSB16K` is big-endian at 16 kHz.** Most Significant Byte first; `LSB…` is
+  little-endian. The client picks the byte order from `codec` (`pcmByteOrder`) and
+  refuses non-PCM formats. Reversed, speech registers as noise.
+- **One-time APPKEYs are reusable until they expire**, despite the name.
+  `createTokenCache` depends on that.
+- **A bodied `s` response stops the client without reconnecting** and rejects
+  `start()`. Retrying a refused token just spends more of them.
+- **`U` / `A` bodies are always JSON objects.** Anything else goes to `onError`.
 - **`finish()` waits for the `e` response** because the final result of the last
   utterance arrives before it.
 - **Audio handed over while disconnected is discarded**, never buffered. Buffering
   delivers past audio as the current utterance.
+
+## `start()`
+
+Resolves when the `s` command succeeds and rejects when recognition cannot start
+(token, codec, refused `s`, reconnect exhausted, or `close()` first — an
+`AbortError`). Tests that drive a fake socket must not `await start()` before
+answering `s`.
 
 ## Credentials
 

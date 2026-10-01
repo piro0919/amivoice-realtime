@@ -71,11 +71,17 @@ async function started(
   > = {},
 ): Promise<{ client: AmiVoiceRealtimeClient; socket: FakeSocket }> {
   const client = makeClient(overrides);
-  await client.start();
+  const starting = client.start();
   const socket = latest();
   socket.open();
   socket.receive("s");
+  await starting;
   return { client, socket };
+}
+
+/** Let a token function's promise settle so the socket gets created. */
+async function settle(): Promise<void> {
+  for (let i = 0; i < 5; i++) await Promise.resolve();
 }
 
 beforeEach(() => {
@@ -98,7 +104,8 @@ describe("start", () => {
   it("fetches a fresh token on every connect", async () => {
     const token = vi.fn().mockResolvedValue("FRESH");
     const client = makeClient({ token });
-    await client.start();
+    void client.start().catch(() => {});
+    await settle();
     latest().open();
     expect(token).toHaveBeenCalledTimes(1);
     expect(latest().texts[0]).toContain("authorization=FRESH");
@@ -107,14 +114,87 @@ describe("start", () => {
   it("is not open until the s response succeeds", async () => {
     const onOpen = vi.fn();
     const client = makeClient({ onOpen });
-    await client.start();
+    let resolved = false;
+    const starting = client.start().then(() => {
+      resolved = true;
+    });
     latest().open();
+    await settle();
     expect(onOpen).not.toHaveBeenCalled();
+    expect(resolved).toBe(false);
     expect(client.connectionState).toBe("connecting");
 
     latest().receive("s");
+    await starting;
     expect(onOpen).toHaveBeenCalledTimes(1);
     expect(client.connectionState).toBe("open");
+  });
+
+  it("rejects when the token cannot be obtained", async () => {
+    const onError = vi.fn();
+    const client = makeClient({
+      onError,
+      token: () => Promise.reject(new Error("no token")),
+    });
+    await expect(client.start()).rejects.toThrow("no token");
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "no token" }),
+    );
+  });
+
+  it("rejects when closed before recognition starts", async () => {
+    const client = makeClient();
+    const starting = client.start();
+    client.close();
+    await expect(starting).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("rejects when the connection closes and reconnecting is off", async () => {
+    const client = makeClient({ reconnect: false });
+    const starting = client.start();
+    latest().close();
+    await expect(starting).rejects.toThrow(
+      "AmiVoice connection closed before recognition started",
+    );
+  });
+
+  it("returns the pending attempt when called again while connecting", async () => {
+    const client = makeClient();
+    const first = client.start();
+    const second = client.start();
+    expect(FakeSocket.instances).toHaveLength(1);
+    latest().open();
+    latest().receive("s");
+    await Promise.all([first, second]);
+  });
+
+  it("rejects a codec it cannot encode", async () => {
+    const onError = vi.fn();
+    const client = makeClient({ codec: "MULAW", onError });
+    await expect(client.start()).rejects.toThrow("Unsupported codec MULAW");
+    expect(FakeSocket.instances).toHaveLength(0);
+    expect(onError).toHaveBeenCalled();
+  });
+});
+
+describe("codec", () => {
+  it("sends big-endian audio for MSB16K", async () => {
+    const { client, socket } = await started({ sendIntervalMs: 1 });
+    // 16 samples is 1 ms at 16 kHz. 0.5 becomes 0x3fff.
+    client.write(new Float32Array(16).fill(0.5), 16000);
+    const packet = socket.binaries[0] as Uint8Array;
+    expect([packet[1], packet[2]]).toEqual([0x3f, 0xff]);
+  });
+
+  it("sends little-endian audio for LSB16K", async () => {
+    const { client, socket } = await started({
+      codec: "LSB16K",
+      sendIntervalMs: 1,
+    });
+    client.write(new Float32Array(16).fill(0.5), 16000);
+    const packet = socket.binaries[0] as Uint8Array;
+    expect([packet[1], packet[2]]).toEqual([0xff, 0x3f]);
+    expect(socket.texts[0]).toMatch(/^s LSB16K /);
   });
 });
 
@@ -139,6 +219,24 @@ describe("results", () => {
     socket.receive('A {"code":"o","message":"error"}');
     expect(onFinal).not.toHaveBeenCalled();
   });
+
+  it("reports a body that is not JSON as an error, not as speech", async () => {
+    const onFinal = vi.fn();
+    const onPartial = vi.fn();
+    const onError = vi.fn();
+    const { socket } = await started({ onError, onFinal, onPartial });
+    socket.receive("A recognizer crashed");
+    socket.receive("U \x01\x01\x01\x01\x01ねこ");
+    expect(onFinal).not.toHaveBeenCalled();
+    expect(onPartial).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledTimes(2);
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message:
+          "AmiVoice A event carried a body that is not a result: recognizer crashed",
+      }),
+    );
+  });
 });
 
 describe("command failure responses", () => {
@@ -146,10 +244,13 @@ describe("command failure responses", () => {
     const onError = vi.fn();
     const onOpen = vi.fn();
     const client = makeClient({ onError, onOpen });
-    await client.start();
+    const starting = client.start();
     latest().open();
     latest().receive("s Authentication failed");
 
+    await expect(starting).rejects.toThrow(
+      "AmiVoice s command failed: Authentication failed",
+    );
     expect(onError).toHaveBeenCalledWith(
       expect.objectContaining({
         message: "AmiVoice s command failed: Authentication failed",
@@ -158,7 +259,45 @@ describe("command failure responses", () => {
     // Recognition never started. Reporting open here would leave the caller
     // waiting for results while the audio it sends is thrown away.
     expect(onOpen).not.toHaveBeenCalled();
-    expect(client.connectionState).toBe("connecting");
+    expect(client.connectionState).toBe("closed");
+  });
+
+  it("does not reconnect after a rejected s command", async () => {
+    vi.useFakeTimers();
+    try {
+      const token = vi.fn().mockReturnValue("BAD");
+      const onClose = vi.fn();
+      const client = makeClient({ onClose, token });
+      const starting = client.start().catch(() => {});
+      await settle();
+      latest().open();
+      latest().receive("s Authentication failed");
+      await starting;
+      // The server hangs up after the failure; that must not start a retry.
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(FakeSocket.instances).toHaveLength(1);
+      expect(token).toHaveBeenCalledTimes(1);
+      expect(onClose).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not reconnect after a rejected s command on a reconnect", async () => {
+    vi.useFakeTimers();
+    try {
+      const { socket } = await started();
+      socket.close();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(FakeSocket.instances).toHaveLength(2);
+
+      latest().open();
+      latest().receive("s Authentication failed");
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(FakeSocket.instances).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("treats a bodied p response as an error", async () => {
@@ -195,7 +334,7 @@ describe("write", () => {
 
   it("discards audio handed over while disconnected", async () => {
     const client = makeClient();
-    await client.start();
+    const starting = client.start();
     latest().open();
     // The s response has not arrived. Buffering here would deliver past audio as
     // the current utterance once recognition starts.
@@ -203,6 +342,7 @@ describe("write", () => {
     expect(latest().binaries).toHaveLength(0);
 
     latest().receive("s");
+    await starting;
     client.write(new Float32Array(1600), 16000);
     expect(latest().binaries).toHaveLength(1);
   });

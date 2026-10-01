@@ -8,13 +8,17 @@ export {
   type WebSocketLike,
 } from "./client";
 export {
+  type ByteOrder,
   buildAudioPacket,
   buildStartCommand,
   concatInt16,
   floatToInt16,
   formatProfileWords,
   int16ToBigEndianBytes,
+  int16ToLittleEndianBytes,
+  isResultBody,
   parseResultBody,
+  pcmByteOrder,
   resample,
   type StartCommandParams,
   splitPacket,

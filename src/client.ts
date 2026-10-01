@@ -1,9 +1,12 @@
 import {
+  type ByteOrder,
   buildAudioPacket,
   buildStartCommand,
   concatInt16,
   floatToInt16,
+  isResultBody,
   parseResultBody,
+  pcmByteOrder,
   resample,
   type StartCommandParams,
   splitPacket,
@@ -37,14 +40,19 @@ export type AmiVoiceRealtimeOptions = {
   /**
    * The authentication token, or a function returning one.
    *
-   * Tokens are single-use and short-lived. A function is called on every connect,
-   * so reconnects get a fresh token. A plain string works only once.
+   * Tokens are short-lived: one can be used for any number of connections until it
+   * expires, and none after. A function is called on every connect, so reconnects
+   * get a token that is still valid. A plain string stops working once it expires.
    *
    * **Never put the credentials (sid / spw) in the browser.** Issue tokens on the
    * server with `amivoice-realtime/server`.
    */
   token: (() => Promise<string> | string) | string;
-  /** Audio format. Defaults to `MSB16K`. Change `sampleRate` to match if you change this. */
+  /**
+   * Audio format. Defaults to `MSB16K`. Headerless 16-bit PCM only: `MSB8K` …
+   * `MSB48K` go out big-endian, `LSB8K` … `LSB48K` little-endian. Anything else
+   * makes `start()` reject. Change `sampleRate` to match the rate in the name.
+   */
   codec?: string;
   /** Recognition engine. Defaults to `-a-general`. */
   grammar?: string;
@@ -59,7 +67,11 @@ export type AmiVoiceRealtimeOptions = {
   onPartial?: (text: string) => void;
   profileId?: string;
   profileWords?: string;
-  /** Reconnect settings. `false` disables it. Defaults to at most 5 attempts. */
+  /**
+   * Reconnect settings. `false` disables it. Defaults to at most 5 attempts.
+   * A rejected `s` command (failed authentication, an unknown codec or engine) is
+   * never retried: the same command would be rejected again.
+   */
   reconnect?: ReconnectOptions | false;
   resultUpdatedIntervalMs?: number;
   /** Sample rate of the audio sent. Defaults to 16000. Match it to `codec`. */
@@ -80,6 +92,18 @@ export type ConnectionState = "closed" | "closing" | "connecting" | "open";
 
 const OPEN = 1;
 
+type PendingStart = {
+  promise: Promise<void>;
+  reject: (error: Error) => void;
+  resolve: () => void;
+};
+
+function abortError(): Error {
+  const error = new Error("The client was closed before recognition started");
+  error.name = "AbortError";
+  return error;
+}
+
 function defaultWebSocketFactory(url: string): WebSocketLike {
   const impl = (globalThis as { WebSocket?: new (url: string) => unknown })
     .WebSocket;
@@ -99,10 +123,13 @@ function defaultWebSocketFactory(url: string): WebSocketLike {
  */
 export class AmiVoiceRealtimeClient {
   private buffer: Int16Array = new Int16Array(0);
+  private byteOrder: ByteOrder = "big";
   private closedByUser = false;
   private finishTimer: null | ReturnType<typeof setTimeout> = null;
   private readonly options: AmiVoiceRealtimeOptions;
   private retries = 0;
+  /** Settles the promise `start()` returned, once recognition starts or fails. */
+  private pendingStart: null | PendingStart = null;
   private state: ConnectionState = "closed";
   private waitingForEnd = false;
   private ws: null | WebSocketLike = null;
@@ -116,13 +143,50 @@ export class AmiVoiceRealtimeClient {
     return this.state;
   }
 
-  /** Connect and start recognizing. Audio may be sent once `onOpen` has fired. */
-  public async start(): Promise<void> {
-    if (this.state === "connecting" || this.state === "open") return;
+  /**
+   * Connect and start recognizing.
+   *
+   * Resolves once the `s` command succeeds — the same moment `onOpen` fires — so
+   * audio can be sent right after. Rejects when recognition cannot start: the
+   * token could not be obtained, the codec is not one this client can encode, the
+   * `s` command was rejected (e.g. authentication failed), the connection closed
+   * and reconnecting gave up, or `close()` / `finish()` was called first (an
+   * `AbortError`). Each failure is also passed to `onError`, except the abort.
+   */
+  public start(): Promise<void> {
+    if (this.state === "open") return Promise.resolve();
+    // Already connecting, or reconnecting: wait for that attempt.
+    if (this.state === "connecting") return this.waitForStart().promise;
     this.closedByUser = false;
     this.retries = 0;
     this.buffer = new Int16Array(0);
-    await this.connect();
+
+    const codec = this.options.codec ?? "MSB16K";
+    const byteOrder = pcmByteOrder(codec);
+    if (!byteOrder) {
+      const error = new Error(
+        `Unsupported codec ${codec}: this client sends 16-bit PCM, so use MSB8K … MSB48K or LSB8K … LSB48K`,
+      );
+      this.emitError(error);
+      return Promise.reject(error);
+    }
+    this.byteOrder = byteOrder;
+
+    const { promise } = this.waitForStart();
+    void this.connect();
+    return promise;
+  }
+
+  private waitForStart(): PendingStart {
+    if (this.pendingStart) return this.pendingStart;
+    let resolve: () => void = () => {};
+    let reject: (error: Error) => void = () => {};
+    const promise = new Promise<void>((done, fail) => {
+      resolve = done;
+      reject = fail;
+    });
+    this.pendingStart = { promise, reject, resolve };
+    return this.pendingStart;
   }
 
   /**
@@ -145,7 +209,7 @@ export class AmiVoiceRealtimeClient {
       const chunk = this.buffer.slice(0, samplesPerPacket);
       this.buffer = this.buffer.slice(samplesPerPacket);
       if (this.ws.readyState !== OPEN) return;
-      this.ws.send(buildAudioPacket(chunk));
+      this.ws.send(buildAudioPacket(chunk, this.byteOrder));
     }
   }
 
@@ -202,7 +266,7 @@ export class AmiVoiceRealtimeClient {
           : this.options.token;
     } catch (error) {
       this.state = "closed";
-      this.emitError(error);
+      this.failStart(this.emitError(error));
       return;
     }
     if (this.closedByUser) {
@@ -216,7 +280,7 @@ export class AmiVoiceRealtimeClient {
       ws = factory(this.options.url ?? DEFAULT_URL);
     } catch (error) {
       this.state = "closed";
-      this.emitError(error);
+      this.failStart(this.emitError(error));
       return;
     }
     this.ws = ws;
@@ -252,12 +316,19 @@ export class AmiVoiceRealtimeClient {
     // becomes visible, so never skip it.
     if (tag === "s" || tag === "p") {
       if (body.trim()) {
-        this.emitError(new Error(`AmiVoice ${tag} command failed: ${body}`));
+        const error = this.emitError(
+          new Error(`AmiVoice ${tag} command failed: ${body}`),
+        );
+        // A rejected s command — failed authentication above all — is rejected
+        // again on every retry, and each retry spends a token. Stop here.
+        if (tag === "s") this.stop(error);
         return;
       }
       if (tag === "s") {
         this.state = "open";
         this.retries = 0;
+        this.pendingStart?.resolve();
+        this.pendingStart = null;
         this.options.onOpen?.();
       }
       return;
@@ -270,6 +341,16 @@ export class AmiVoiceRealtimeClient {
         this.waitingForEnd = false;
         this.onFinished?.();
       }
+      return;
+    }
+    if ((tag === "U" || tag === "A") && !isResultBody(body)) {
+      // Every result is a JSON object. Anything else is an error or a broken
+      // packet, and must not reach the caller as recognized speech.
+      this.emitError(
+        new Error(
+          `AmiVoice ${tag} event carried a body that is not a result: ${body}`,
+        ),
+      );
       return;
     }
     if (tag === "U") {
@@ -291,20 +372,19 @@ export class AmiVoiceRealtimeClient {
       return;
     }
     const reconnect = this.options.reconnect;
-    if (reconnect === false) {
-      this.state = "closed";
-      this.options.onClose?.();
-      return;
-    }
-    const maxRetries = reconnect?.maxRetries ?? 5;
+    const maxRetries = reconnect === false ? 0 : (reconnect?.maxRetries ?? 5);
     if (this.retries >= maxRetries) {
       this.state = "closed";
+      this.failStart(
+        new Error("AmiVoice connection closed before recognition started"),
+      );
       this.options.onClose?.();
       return;
     }
-    const minDelay = reconnect?.minDelayMs ?? 1000;
-    const maxDelay = reconnect?.maxDelayMs ?? 10_000;
-    const growFactor = reconnect?.growFactor ?? 1.3;
+    const settings = reconnect || {};
+    const minDelay = settings.minDelayMs ?? 1000;
+    const maxDelay = settings.maxDelayMs ?? 10_000;
+    const growFactor = settings.growFactor ?? 1.3;
     const delay = Math.min(maxDelay, minDelay * growFactor ** this.retries);
     this.retries += 1;
     this.state = "connecting";
@@ -314,13 +394,29 @@ export class AmiVoiceRealtimeClient {
     }, delay);
   }
 
-  private emitError(error: unknown): void {
-    this.options.onError?.(
-      error instanceof Error ? error : new Error(String(error)),
-    );
+  /** Report an error to `onError`, and hand it back as an `Error`. */
+  private emitError(error: unknown): Error {
+    const normalized =
+      error instanceof Error ? error : new Error(String(error));
+    this.options.onError?.(normalized);
+    return normalized;
+  }
+
+  /** Reject the promise `start()` returned, if it is still waiting. */
+  private failStart(error: Error): void {
+    this.pendingStart?.reject(error);
+    this.pendingStart = null;
+  }
+
+  /** Close for good after a failure that retrying would not fix. */
+  private stop(error: Error): void {
+    this.closedByUser = true;
+    this.failStart(error);
+    this.teardown();
   }
 
   private teardown(): void {
+    this.failStart(abortError());
     if (this.finishTimer) {
       clearTimeout(this.finishTimer);
       this.finishTimer = null;

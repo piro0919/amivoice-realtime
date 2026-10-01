@@ -37,6 +37,36 @@ export function int16ToBigEndianBytes(int16: Int16Array): Uint8Array {
   return out;
 }
 
+/**
+ * Convert Int16 PCM to a little-endian byte sequence, for the `LSB…` formats.
+ */
+export function int16ToLittleEndianBytes(int16: Int16Array): Uint8Array {
+  const out = new Uint8Array(int16.length * 2);
+  let j = 0;
+  for (let i = 0; i < int16.length; i++) {
+    const v = int16[i] ?? 0;
+    out[j++] = v & 0xff;
+    out[j++] = (v >> 8) & 0xff;
+  }
+  return out;
+}
+
+export type ByteOrder = "big" | "little";
+
+/**
+ * The byte order a headerless PCM `codec` expects: `MSB8K` … `MSB48K` are
+ * big-endian, `LSB8K` … `LSB48K` little-endian.
+ *
+ * Returns `undefined` for anything else — `MULAW`, `ALAW`, and the header formats
+ * such as `16K` — because those are not 16-bit PCM and this client cannot produce
+ * them from Float32 samples.
+ */
+export function pcmByteOrder(codec: string): ByteOrder | undefined {
+  if (/^MSB(8|11|16|22|32|44|48)K$/.test(codec)) return "big";
+  if (/^LSB(8|11|16|22|32|44|48)K$/.test(codec)) return "little";
+  return undefined;
+}
+
 /** Resample from the input rate to the output rate by linear interpolation. */
 export function resample(
   input: Float32Array,
@@ -61,9 +91,20 @@ export function resample(
   return output;
 }
 
-/** Build an audio packet for the `p` command. The first byte is 'p'. */
-export function buildAudioPacket(int16: Int16Array): Uint8Array {
-  const bytes = int16ToBigEndianBytes(int16);
+/**
+ * Build an audio packet for the `p` command. The first byte is 'p'.
+ *
+ * `byteOrder` must match the codec named in the `s` command — see `pcmByteOrder`.
+ * Defaults to big-endian, for the default `MSB16K`.
+ */
+export function buildAudioPacket(
+  int16: Int16Array,
+  byteOrder: ByteOrder = "big",
+): Uint8Array {
+  const bytes =
+    byteOrder === "little"
+      ? int16ToLittleEndianBytes(int16)
+      : int16ToBigEndianBytes(int16);
   const frame = new Uint8Array(1 + bytes.length);
   frame[0] = 0x70; // 'p'
   frame.set(bytes, 1);
@@ -84,37 +125,46 @@ export function splitPacket(data: string): { body: string; tag: string } {
  * Extract the recognized text from the body of a `U` or `A` event.
  *
  * The body is JSON, but one carrying a `code` is an error rather than a result, so
- * it is dropped. Bodies that do not parse as JSON also arrive; those are returned
- * with their control characters stripped.
+ * it is dropped. A body that is not a JSON object is not a result either and gives
+ * `undefined`; use `isResultBody` to tell it apart from an empty result.
  */
 export function parseResultBody(body: string): string | undefined {
+  const obj = parseJsonObject(body);
+  if (!obj || obj.code) return undefined;
+  if (typeof obj.text === "string" && obj.text.trim()) return obj.text;
+  const results = obj.results;
+  if (Array.isArray(results)) {
+    const first: unknown = results[0];
+    if (
+      first &&
+      typeof first === "object" &&
+      "text" in first &&
+      typeof (first as { text: unknown }).text === "string" &&
+      (first as { text: string }).text.trim()
+    ) {
+      return (first as { text: string }).text;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Whether a `U` or `A` body is a JSON object, as every result is. Anything else is
+ * a malformed or error body, not recognized speech.
+ */
+export function isResultBody(body: string): boolean {
+  return parseJsonObject(body) !== undefined;
+}
+
+function parseJsonObject(body: string): Record<string, unknown> | undefined {
   try {
     const json: unknown = JSON.parse(body);
-    if (json && typeof json === "object") {
-      const obj = json as Record<string, unknown>;
-      if (obj.code) return undefined;
-      if (typeof obj.text === "string" && obj.text.trim()) return obj.text;
-      const results = obj.results;
-      if (Array.isArray(results)) {
-        const first: unknown = results[0];
-        if (
-          first &&
-          typeof first === "object" &&
-          "text" in first &&
-          typeof (first as { text: unknown }).text === "string" &&
-          (first as { text: string }).text.trim()
-        ) {
-          return (first as { text: string }).text;
-        }
-      }
-      return undefined;
-    }
+    return json && typeof json === "object" && !Array.isArray(json)
+      ? (json as Record<string, unknown>)
+      : undefined;
   } catch {
-    // Non-JSON bodies are handled below
+    return undefined;
   }
-  let text = body;
-  if (text.startsWith("\x01\x01\x01\x01\x01")) text = text.slice(5);
-  return text || undefined;
 }
 
 export type StartCommandParams = {

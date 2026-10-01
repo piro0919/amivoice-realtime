@@ -6,7 +6,10 @@ import {
   floatToInt16,
   formatProfileWords,
   int16ToBigEndianBytes,
+  int16ToLittleEndianBytes,
+  isResultBody,
   parseResultBody,
+  pcmByteOrder,
   resample,
   splitPacket,
 } from "../src/codec";
@@ -40,11 +43,64 @@ describe("int16ToBigEndianBytes", () => {
   });
 });
 
+describe("int16ToLittleEndianBytes", () => {
+  it("puts the low byte first", () => {
+    expect(
+      Array.from(int16ToLittleEndianBytes(new Int16Array([0x1234]))),
+    ).toEqual([0x34, 0x12]);
+  });
+
+  it("keeps negatives in two's complement", () => {
+    expect(Array.from(int16ToLittleEndianBytes(new Int16Array([-2])))).toEqual([
+      0xfe, 0xff,
+    ]);
+  });
+});
+
+describe("pcmByteOrder", () => {
+  it.each([
+    "MSB8K",
+    "MSB11K",
+    "MSB16K",
+    "MSB22K",
+    "MSB32K",
+    "MSB44K",
+    "MSB48K",
+  ])("reads %s as big-endian", (codec) => {
+    expect(pcmByteOrder(codec)).toBe("big");
+  });
+
+  it.each([
+    "LSB8K",
+    "LSB11K",
+    "LSB16K",
+    "LSB22K",
+    "LSB32K",
+    "LSB44K",
+    "LSB48K",
+  ])("reads %s as little-endian", (codec) => {
+    expect(pcmByteOrder(codec)).toBe("little");
+  });
+
+  it.each(["MULAW", "ALAW", "16K", "8K", "MSB12K", "msb16k"])(
+    "has no PCM byte order for %s",
+    (codec) => {
+      expect(pcmByteOrder(codec)).toBeUndefined();
+    },
+  );
+});
+
 describe("buildAudioPacket", () => {
   it("puts 'p' at the front", () => {
     const packet = buildAudioPacket(new Int16Array([0x0102]));
     expect(packet[0]).toBe(0x70);
     expect(Array.from(packet.slice(1))).toEqual([0x01, 0x02]);
+  });
+
+  it("writes little-endian samples when asked", () => {
+    const packet = buildAudioPacket(new Int16Array([0x0102]), "little");
+    expect(packet[0]).toBe(0x70);
+    expect(Array.from(packet.slice(1))).toEqual([0x02, 0x01]);
   });
 });
 
@@ -109,9 +165,23 @@ describe("parseResultBody", () => {
     expect(parseResultBody('{"text":"  "}')).toBeUndefined();
   });
 
-  it("strips control characters from a non-JSON body", () => {
-    expect(parseResultBody("\x01\x01\x01\x01\x01ねこ")).toBe("ねこ");
+  it("does not treat a non-JSON body as a result", () => {
+    expect(parseResultBody("\x01\x01\x01\x01\x01ねこ")).toBeUndefined();
+    expect(parseResultBody("recognizer crashed")).toBeUndefined();
   });
+});
+
+describe("isResultBody", () => {
+  it("accepts a JSON object", () => {
+    expect(isResultBody('{"text":""}')).toBe(true);
+  });
+
+  it.each(["recognizer crashed", "", "[]", "null", '"text"'])(
+    "rejects %j",
+    (body) => {
+      expect(isResultBody(body)).toBe(false);
+    },
+  );
 });
 
 describe("buildStartCommand", () => {

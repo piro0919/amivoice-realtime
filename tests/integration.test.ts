@@ -83,7 +83,7 @@ describe("round trip over a real server", () => {
     );
 
     await client.start();
-    await waitFor(() => client.connectionState === "open", "open");
+    expect(client.connectionState).toBe("open");
     expect(receivedText[0]).toBe(
       "s MSB16K -a-general resultUpdatedInterval=1000 authorization=TOKEN profileId=test-profile",
     );
@@ -115,29 +115,43 @@ describe("round trip over a real server", () => {
     expect(client.connectionState).toBe("closed");
   });
 
-  it("reports an auth failure and never reports open", async () => {
-    // The real failure shape: s comes back carrying a body.
+  it("reports an auth failure, rejects start and does not reconnect", async () => {
+    // The real failure shape: s comes back carrying a body, then the server hangs
+    // up. Reconnect stays on, with a short delay, so a retry would show up here.
     server.removeAllListeners("connection");
     server.on("connection", (socket) => {
-      socket.on("message", () => socket.send("s Authentication failed"));
+      connections.push(socket);
+      socket.on("message", () => {
+        socket.send("s Authentication failed");
+        socket.close();
+      });
     });
 
     const errors: Error[] = [];
+    const tokens: string[] = [];
     const client = track(
       new AmiVoiceRealtimeClient({
         onError: (error) => errors.push(error),
-        reconnect: false,
-        token: "BAD",
+        reconnect: { maxDelayMs: 20, minDelayMs: 10 },
+        token: () => {
+          tokens.push("BAD");
+          return "BAD";
+        },
         url,
       }),
     );
-    await client.start();
-    await waitFor(() => errors.length > 0, "error");
 
+    await expect(client.start()).rejects.toThrow(
+      "AmiVoice s command failed: Authentication failed",
+    );
     expect(errors[0]?.message).toBe(
       "AmiVoice s command failed: Authentication failed",
     );
-    expect(client.connectionState).not.toBe("open");
-    client.close();
+    expect(client.connectionState).toBe("closed");
+
+    // Several retry delays' worth of time.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(connections).toHaveLength(1);
+    expect(tokens).toHaveLength(1);
   });
 });

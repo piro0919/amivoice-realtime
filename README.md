@@ -22,9 +22,9 @@ npm install amivoice-realtime
 
 ### Server side — issue a token
 
-Connecting requires a single-use authentication token. Issuing one needs the service
-ID and password, which must never reach the browser, so the server returns only the
-token.
+Connecting requires a short-lived authentication token. Issuing one needs the
+service ID and password, which must never reach the browser, so the server returns
+only the token. A token works for any number of connections until it expires.
 
 ```ts
 // app/api/amivoice/token/route.ts (Next.js example)
@@ -43,8 +43,9 @@ export async function GET() {
 }
 ```
 
-`createTokenCache` reuses an issued token until shortly before it expires and
-collapses concurrent requests into one. Call `issueAmiVoiceToken` directly if you
+`createTokenCache` reuses an issued token until shortly before it expires (a token
+stays valid for many connections within its lifetime) and collapses concurrent
+requests into one. Call `issueAmiVoiceToken` directly if you
 would rather not reuse.
 
 ### Browser side — send audio
@@ -63,6 +64,8 @@ const client = new AmiVoiceRealtimeClient({
   onError: (error) => console.error(error),
 });
 
+// Resolves once recognition has started; rejects if it cannot — e.g. the
+// token is refused. Failures also go to onError.
 await client.start();
 
 // Hand over the Float32 samples arriving from the microphone.
@@ -117,12 +120,12 @@ new AmiVoiceRealtimeClient({ token, profileWords, profileId: "your-profile" });
 | ---- | ---- | ---- |
 | `token` | (required) | The authentication token, or a function returning one |
 | `grammar` | `-a-general` | Recognition engine |
-| `codec` | `MSB16K` | Audio format: big-endian, 16 kHz |
-| `sampleRate` | `16000` | Sample rate of the audio sent. Match it to `codec` |
+| `codec` | `MSB16K` | Audio format. `MSB8K` … `MSB48K` are sent big-endian, `LSB8K` … `LSB48K` little-endian. Other formats (`MULAW`, `ALAW`, header formats) make `start()` reject |
+| `sampleRate` | `16000` | Sample rate of the audio sent. Match it to the rate in `codec` |
 | `sendIntervalMs` | `100` | How much audio each packet carries |
 | `resultUpdatedIntervalMs` | `1000` | How often interim results are sent back |
 | `profileId` / `profileWords` | — | Personal dictionary and registered words |
-| `reconnect` | up to 5 tries | Reconnect settings. `false` disables it |
+| `reconnect` | up to 5 tries | Reconnect settings. `false` disables it. A rejected `s` command, such as failed authentication, is never retried |
 | `finishTimeoutMs` | `3000` | How long `finish()` waits for the `e` response |
 | `url` | `wss://acp-api.amivoice.com/v1/` | Endpoint |
 | `webSocket` | global | The `WebSocket` implementation |
@@ -136,13 +139,19 @@ Each of these came from running the protocol in production.
   these with no body on success and an error message on failure. This is the only
   place a failed authentication becomes visible; miss it and you keep sending audio
   while waiting for results that never come
+- **A rejected `s` command is not retried.** Failed authentication fails the same way
+  every time, and each retry would spend a token. The client closes and `start()`
+  rejects
+- **A `U` or `A` body that is not JSON is an error, not speech.** It goes to
+  `onError` instead of `onPartial` / `onFinal`
 - **No audio is sent until `s` succeeds.** Anything sent earlier is discarded
 - **Audio handed over while disconnected is discarded.** Buffering it would deliver
   past audio as the current utterance
 - **`finish()` waits for the `e` response before closing.** Closing immediately
   drops the end of what was said
-- **Audio goes out big-endian.** `MSB16K` means Most Significant Byte first. Getting
-  it backwards turns speech into noise
+- **Audio goes out in the byte order the codec names.** `MSB16K` means Most
+  Significant Byte first, `LSB16K` least. Getting it backwards turns speech into
+  noise
 
 ## Using the lower layer
 
