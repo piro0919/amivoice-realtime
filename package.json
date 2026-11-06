@@ -74,24 +74,24 @@
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
-    "@biomejs/biome": "2.5.15",
+    "@biomejs/biome": "2.6.4",
     "@piro0919/biome-config": "github:piro0919/biome-config#v1.1.0",
-    "@tailwindcss/postcss": "^4.3.3",
+    "@tailwindcss/postcss": "^4.3.4",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/ws": "^8.18.2",
     "@vercel/analytics": "^2.0.1",
     "babel-plugin-react-compiler": "^1.0.0",
     "lefthook": "^2.2.2",
-    "next": "16.4.2",
+    "next": "16.4.5",
     "publint": "^0.3.25",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "tailwindcss": "^4.3.3",
+    "tailwindcss": "^4.3.4",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
     "vitest": "^3.2.7",
-    "ws": "^8.22.0"
+    "ws": "^8.22.1"
   },
   "homepage": "https://amivoice-realtime.kkweb.io/"
 }
