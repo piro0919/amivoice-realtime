@@ -116,20 +116,20 @@ new AmiVoiceRealtimeClient({ token, profileWords, profileId: "your-profile" });
 
 ## Options
 
-| Option | Default | Meaning |
-| ---- | ---- | ---- |
-| `token` | (required) | The authentication token, or a function returning one |
-| `grammar` | `-a-general` | Recognition engine |
-| `codec` | `MSB16K` | Audio format. `MSB8K` … `MSB48K` are sent big-endian, `LSB8K` … `LSB48K` little-endian. Other formats (`MULAW`, `ALAW`, header formats) make `start()` reject |
-| `sampleRate` | `16000` | Sample rate of the audio sent. Match it to the rate in `codec` |
-| `sendIntervalMs` | `100` | How much audio each packet carries |
-| `resultUpdatedIntervalMs` | `1000` | How often interim results are sent back |
-| `profileId` / `profileWords` | — | Personal dictionary and registered words |
-| `reconnect` | up to 5 tries | Reconnect settings. `false` disables it. A rejected `s` command, such as failed authentication, is never retried |
-| `finishTimeoutMs` | `3000` | How long `finish()` waits for the `e` response |
-| `url` | `wss://acp-api.amivoice.com/v1/` | Endpoint |
-| `webSocket` | global | The `WebSocket` implementation |
-| `startParams` | — | Extra parameters appended to the `s` command |
+| Option                       | Default                          | Meaning                                                                                                                                                       |
+| ---------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `token`                      | (required)                       | The authentication token, or a function returning one                                                                                                         |
+| `grammar`                    | `-a-general`                     | Recognition engine                                                                                                                                            |
+| `codec`                      | `MSB16K`                         | Audio format. `MSB8K` … `MSB48K` are sent big-endian, `LSB8K` … `LSB48K` little-endian. Other formats (`MULAW`, `ALAW`, header formats) make `start()` reject |
+| `sampleRate`                 | `16000`                          | Sample rate of the audio sent. Match it to the rate in `codec`                                                                                                |
+| `sendIntervalMs`             | `100`                            | How much audio each packet carries                                                                                                                            |
+| `resultUpdatedIntervalMs`    | `1000`                           | How often interim results are sent back                                                                                                                       |
+| `profileId` / `profileWords` | —                                | Personal dictionary and registered words                                                                                                                      |
+| `reconnect`                  | up to 5 tries                    | Reconnect settings. `false` disables it. A rejected `s` command, such as failed authentication, is never retried                                              |
+| `finishTimeoutMs`            | `3000`                           | How long `finish()` waits for the `e` response                                                                                                                |
+| `url`                        | `wss://acp-api.amivoice.com/v1/` | Endpoint                                                                                                                                                      |
+| `webSocket`                  | global                           | The `WebSocket` implementation                                                                                                                                |
+| `startParams`                | —                                | Extra parameters appended to the `s` command                                                                                                                  |
 
 ## What this gets right
 
